@@ -40,21 +40,22 @@ except:
 st.subheader("Home Run Candidates")
 if pyb:
     try:
-        with st.spinner("Loading power stats..."):
+        with st.spinner("Loading power stats... (may take 30s)"):
             end = date.today()
             start = end - pd.Timedelta(days=30)
-            # Filter for batted balls only
-            df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat(), 
-                             groupby='batter')
+            df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat())
             
             if not df.empty:
                 st.write("Data loaded! Rows:", len(df))
                 
-                player_stats = df.groupby('player_name').agg({
-                    'barrel_rate': 'mean',
-                    'launch_speed': 'max',
-                    'events': 'count'
-                }).reset_index()
+                # Aggregate only existing columns
+                agg_dict = {'events': 'count'}
+                if 'barrel_rate' in df.columns:
+                    agg_dict['barrel_rate'] = 'mean'
+                if 'launch_speed' in df.columns:
+                    agg_dict['launch_speed'] = 'max'
+                
+                player_stats = df.groupby('player_name').agg(agg_dict).reset_index()
                 
                 player_stats.rename(columns={
                     'player_name': 'Name',
@@ -62,13 +63,10 @@ if pyb:
                     'launch_speed': 'Max EV'
                 }, inplace=True)
                 
-                if 'Barrel%' in player_stats.columns:
-                    player_stats['Model%'] = (player_stats['Barrel%'] * 100 * 2.5).clip(upper=0.45)  # convert if needed
-                else:
-                    player_stats['Model%'] = 0.15
+                player_stats['Model%'] = 0.15  # placeholder for now
+                player_stats = player_stats.sort_values('events', ascending=False).head(20)
                 
-                player_stats = player_stats.sort_values('Model%', ascending=False).head(20)
-                st.dataframe(player_stats[['Name', 'Barrel%', 'Max EV', 'Model%']])
+                st.dataframe(player_stats)
             else:
                 st.write("No data yet.")
     except Exception as e:
@@ -77,4 +75,4 @@ if pyb:
 else:
     st.write("pybaseball not installed")
 
-st.caption("Ready for 12 criteria next. Tell me 'add checklist' when ready.")
+st.caption("Type 'add checklist' when ready for the 12 criteria.")
