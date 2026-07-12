@@ -46,11 +46,16 @@ if pyb:
             df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat())
             
             if not df.empty:
-                player_stats = df.groupby('player_name').agg({
-                    'barrel': 'mean',
-                    'launch_speed': 'max',
-                    'events': 'count'
-                }).reset_index()
+                st.write("Debug: Columns found -", list(df.columns)[:15])
+                
+                agg_dict = {}
+                if 'barrel' in df.columns:
+                    agg_dict['barrel'] = 'mean'
+                if 'launch_speed' in df.columns:
+                    agg_dict['launch_speed'] = 'max'
+                agg_dict['events'] = 'count'
+                
+                player_stats = df.groupby('player_name').agg(agg_dict).reset_index()
                 
                 player_stats.rename(columns={
                     'player_name': 'Name',
@@ -58,16 +63,19 @@ if pyb:
                     'launch_speed': 'Max EV'
                 }, inplace=True)
                 
-                player_stats['Model%'] = (player_stats['Barrel%'] * 2.5).clip(upper=0.45)
-                player_stats = player_stats.sort_values('Model%', ascending=False).head(20)
+                if 'Barrel%' in player_stats.columns:
+                    player_stats['Model%'] = (player_stats['Barrel%'] * 2.5).clip(upper=0.45)
+                else:
+                    player_stats['Model%'] = 0.15
                 
-                st.dataframe(player_stats[['Name', 'Barrel%', 'Max EV', 'Model%']])
+                player_stats = player_stats.sort_values('Model%', ascending=False).head(20)
+                st.dataframe(player_stats)
             else:
                 st.write("No Statcast data yet.")
     except Exception as e:
         st.error("Statcast error")
-        st.write(str(e)[:150])
+        st.write(str(e)[:200])
 else:
     st.write("pybaseball not installed")
 
-st.caption("Good progress! Tell me when ready for 12 criteria.")
+st.caption("Tell me what to add next (12 criteria, weather, etc.)")
