@@ -9,13 +9,14 @@ try:
     pyb.cache.enable()
 except ImportError:
     pyb = None
-    st.error("pybaseball not installed. Run: pip install pybaseball")
+    st.error("Install pybaseball: pip install pybaseball")
 
 st.set_page_config(page_title="MLB HR Model", layout="wide")
 
 MLB_BASE = "https://statsapi.mlb.com/api/v1"
-HEADERS = {"User-Agent": "Mozilla/5.0 (dashboard script)"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
+# Park and dome data (you already had this)
 PARK_HR_FACTOR = {
     "COL": 1.25, "CIN": 1.18, "NYY": 1.12, "BAL": 1.10, "PHI": 1.09,
     "TEX": 1.07, "BOS": 1.05, "CWS": 1.05, "MIL": 1.04, "HOU": 1.03,
@@ -27,84 +28,81 @@ PARK_HR_FACTOR = {
 
 DOME_TEAMS = {"TB", "TOR", "ARI", "HOU", "MIL", "SEA", "MIA", "TEX"}
 
-STADIUM_COORDS = {
-    "NYY": (40.8296, -73.9262), "BOS": (42.3467, -71.0972),
-    "BAL": (39.2839, -76.6218), "PHI": (39.9061, -75.1665),
-    "ATL": (33.8908, -84.4678), "CIN": (39.0975, -84.5069),
-    "COL": (39.7559, -104.9942), "STL": (38.6226, -90.1928),
-    "CHC": (41.9484, -87.6553), "MIN": (44.9817, -93.2776),
-    "CWS": (41.8299, -87.6338), "DET": (42.3390, -83.0485),
-    "CLE": (41.4962, -81.6852), "KC": (39.0517, -94.4803),
-    "LAA": (33.8003, -117.8827), "LAD": (34.0739, -118.2400),
-    "SF": (37.7786, -122.3893), "SD": (32.7076, -117.1570),
-    "OAK": (37.7516, -122.2005), "WSH": (38.8730, -77.0074),
-    "NYM": (40.7571, -73.8458), "PIT": (40.4469, -80.0057),
-}
+st.title("MLB Home Run Model Dashboard")
 
-@st.cache_data(ttl=300)
-def get_today_schedule(game_date: str = None) -> pd.DataFrame:
-    if game_date is None:
-        game_date = date.today().isoformat()
+st.write("This shows good home run hitters today using real power stats.")
+
+game_date = st.date_input("Pick a date", value=date.today())
+
+@st.cache_data(ttl=3600)
+def get_games(game_date_str):
     url = f"{MLB_BASE}/schedule"
-    params = {
-        "sportId": 1, "date": game_date,
-        "hydrate": "probablePitcher,team,linescore,venue"
-    }
+    params = {"sportId": 1, "date": game_date_str, "hydrate": "probablePitcher,venue"}
     resp = requests.get(url, params=params, headers=HEADERS)
-    resp.raise_for_status()
     data = resp.json()
-
     games = []
-    for date_obj in data.get("dates", []):
-        for game in date_obj.get("games", []):
+    for d in data.get("dates", []):
+        for g in d.get("games", []):
             games.append({
-                "game_pk": game["gamePk"],
-                "away_team": game["teams"]["away"]["team"]["abbreviation"],
-                "home_team": game["teams"]["home"]["team"]["abbreviation"],
-                "venue": game["venue"]["name"],
-                "probable_away": game["teams"]["away"].get("probablePitcher", {}).get("fullName"),
-                "probable_home": game["teams"]["home"].get("probablePitcher", {}).get("fullName"),
+                "away": g["teams"]["away"]["team"]["abbreviation"],
+                "home": g["teams"]["home"]["team"]["abbreviation"],
+                "venue": g["venue"]["name"],
+                "away_pitcher": g["teams"]["away"].get("probablePitcher", {}).get("fullName", "TBD"),
+                "home_pitcher": g["teams"]["home"].get("probablePitcher", {}).get("fullName", "TBD"),
             })
     return pd.DataFrame(games)
 
-@st.cache_data(ttl=3600)
-def get_batting_stats(season: int = None):
-    if not pyb:
-        return pd.DataFrame()
-    if season is None:
-        season = date.today().year
-    return pyb.batting_stats(season)
-
-@st.cache_data(ttl=3600)
-def get_pitching_stats(season: int = None):
-    if not pyb:
-        return pd.DataFrame()
-    if season is None:
-        season = date.today().year
-    return pyb.pitching_stats(season)
-
-st.title("MLB Home Run Model Dashboard")
-
-st.markdown("Data sources: MLB Stats API + pybaseball (free). Odds require separate API key.")
-
-game_date = st.date_input("Select Date", value=date.today())
-
-schedule = get_today_schedule(game_date.isoformat())
-batting = get_batting_stats()
-
-if schedule.empty:
-    st.warning("No games found.")
-    st.stop()
+games_df = get_games(game_date.isoformat())
 
 st.subheader(f"Games on {game_date}")
-for _, game in schedule.iterrows():
-    with st.expander(f"{game['away_team']} @ {game['home_team']} - {game['venue']}"):
-        st.write(f"Probables: {game.get('probable_away', 'TBD')} vs {game.get('probable_home', 'TBD')}")
+for _, g in games_df.iterrows():
+    with st.expander(f"{g['away']} @ {g['home']} - {g['venue']}"):
+        st.write(f"Pitchers: {g['away_pitcher']} (away) vs {g['home_pitcher']} (home)")
 
-st.header("HR Value Plays")
-if not batting.empty:
-    # Placeholder model - replace with your full logic
-    batting["Model%"] = 0.15  # TODO: compute properly
-    st.dataframe(batting[["Name", "Team", "Model%"]].sort_values("Model%", ascending=False).head(30))
+# === NEW PART: Get real power stats ===
+@st.cache_data(ttl=1800)
+def get_power_stats():
+    if not pyb:
+        return pd.DataFrame()
+    try:
+        # Get recent games (last 30 days)
+        end = date.today()
+        start = end - pd.Timedelta(days=30)
+        df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat())
+        
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Group by batter to make player stats
+        player_stats = df.groupby(['batter', 'player_name']).agg({
+            'barrel': 'mean',
+            'launch_speed': 'max',           # Max EV
+            'hit_distance_sc': 'mean',
+            'launch_angle': 'mean',
+            'events': 'count'
+        }).reset_index()
+        
+        player_stats.rename(columns={
+            'player_name': 'Name',
+            'barrel': 'Barrel%',
+            'launch_speed': 'Max_EV'
+        }, inplace=True)
+        
+        player_stats['HardHit%'] = 0.5  # placeholder
+        player_stats['Model%'] = player_stats['Barrel%'] * 2 + 0.1  # very simple for now
+        
+        return player_stats.sort_values('Model%', ascending=False)
+        
+    except Exception as e:
+        st.error(f"Error getting stats: {str(e)[:100]}")
+        return pd.DataFrame()
+
+st.header("Best Home Run Candidates Today")
+power_df = get_power_stats()
+
+if not power_df.empty:
+    st.dataframe(power_df[['Name', 'Barrel%', 'Max_EV', 'Model%']].head(25))
 else:
-    st.info("Loading batting stats... (may take a minute)")
+    st.info("Waiting for stats... First time can take a minute.")
+
+st.caption("This is a simple version. We will make the Model% smarter later with your 12 rules.")
