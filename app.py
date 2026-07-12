@@ -1,8 +1,10 @@
 import streamlit as st
 from datetime import date
 
-st.title("Test Dashboard")
-st.write("If you see this, Streamlit works!")
+st.title("My Home Run App")
+st.write("Hello! This is a test.")
 
-game_date = st.date_input("Pick a date", value=date.today())
-st.write(f"Selected date: {game_date}")
+date_picked = st.date_input("Pick a day", value=date.today())
+st.write("You picked:", date_picked)
+
+st.write("If you see this message, it works!")
