@@ -11,43 +11,53 @@ except ImportError:
 
 st.set_page_config(page_title="MLB HR Model", layout="wide")
 st.title("MLB Home Run Model Dashboard")
-st.write("Find good home run bets today - Like the example")
+st.write("Find good home run bets today")
 
 date_picked = st.date_input("Pick a day", value=date.today())
 
-# Games
 st.subheader("Today's Games")
-# (keep your games code here - I omitted for brevity, add back if needed)
+try:
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_picked.strftime('%Y-%m-%d')}&hydrate=probablePitcher,team,venue"
+    data = requests.get(url).json()
+    
+    games = []
+    for d in data.get("dates", []):
+        for g in d.get("games", []):
+            away = g["teams"]["away"]["team"].get("abbreviation", "N/A")
+            home = g["teams"]["home"]["team"].get("abbreviation", "N/A")
+            venue = g.get("venue", {}).get("name", "N/A")
+            away_p = g["teams"]["away"].get("probablePitcher", {}).get("fullName", "TBD")
+            home_p = g["teams"]["home"].get("probablePitcher", {}).get("fullName", "TBD")
+            games.append({"Game": f"{away} @ {home}", "Venue": venue, "Pitchers": f"{away_p} vs {home_p}"})
+    
+    if games:
+        st.dataframe(pd.DataFrame(games))
+    else:
+        st.write("No games today.")
+except:
+    st.error("Could not load games")
 
-st.subheader("Top HR Value Plays")
+st.subheader("Home Run Candidates (All Players)")
 if pyb:
     try:
-        with st.spinner("Loading..."):
+        with st.spinner("Pulling all available data..."):
             batting = pyb.batting_stats_range(start_dt=(date.today() - pd.Timedelta(days=30)).isoformat())
+            st.write(f"Batters loaded: {len(batting)}")
             
             if not batting.empty:
-                df = batting[['Name', 'Team', 'Barrel%', 'HardHit%', 'ISO', 'xSLG', 'maxEV']].copy()
-                
-                # Simple Model
-                df['Model%'] = ((df['Barrel%'] * 0.4) + (df['HardHit%'] * 0.3) + (df['ISO'] * 50) ).clip(upper=0.45)
-                df['Score'] = (df['Model%'] * 500).astype(int)
-                
-                # 12 Criteria (example)
-                df['Barrel Check'] = df['Barrel%'] >= 13
-                df['HardHit Check'] = df['HardHit%'] >= 50
-                df['ISO Check'] = df['ISO'] >= 0.220
+                cols = [c for c in ['Name', 'Team', 'Barrel%', 'HardHit%', 'ISO', 'xSLG', 'maxEV'] if c in batting.columns]
+                display = batting[cols].copy()
+                display['Model%'] = 0.20
+                display['Score'] = 70
                 
                 sort_by = st.selectbox("Sort by", ["Score", "Model%", "Barrel%"])
-                df = df.sort_values(sort_by, ascending=False)
+                display = display.sort_values(sort_by, ascending=False)
                 
-                # Nice display
-                st.dataframe(
-                    df.head(30)[['Name', 'Team', 'Model%', 'Score', 'Barrel%', 'HardHit%', 'ISO', 'Barrel Check', 'HardHit Check', 'ISO Check']],
-                    use_container_width=True
-                )
+                st.dataframe(display.head(100))
     except Exception as e:
-        st.error(str(e)[:150])
+        st.error("Data error")
+        st.write(str(e)[:200])
 else:
     st.write("pybaseball not installed")
 
-st.caption("We can make the checkmarks green and add Edge/Book next.")
+st.caption("Full model + 12 criteria next.")
