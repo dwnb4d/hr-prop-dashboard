@@ -11,14 +11,13 @@ except ImportError:
 
 st.set_page_config(page_title="MLB HR Model", layout="wide")
 st.title("MLB Home Run Model Dashboard")
-st.write("Find good home run bets today - Full Data")
+st.write("Find good home run bets today")
 
 date_picked = st.date_input("Pick a day", value=date.today())
 
-# Games
 st.subheader("Today's Games")
 try:
-    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_picked.strftime('%Y-%m-%d')}&hydrate=probablePitcher,team,venue,weather"
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_picked.strftime('%Y-%m-%d')}&hydrate=probablePitcher,team,venue"
     data = requests.get(url).json()
     
     games = []
@@ -29,8 +28,7 @@ try:
             venue = g.get("venue", {}).get("name", "N/A")
             away_p = g["teams"]["away"].get("probablePitcher", {}).get("fullName", "TBD")
             home_p = g["teams"]["home"].get("probablePitcher", {}).get("fullName", "TBD")
-            weather = g.get("weather", "Unknown")
-            games.append({"Game": f"{away} @ {home}", "Venue": venue, "Pitchers": f"{away_p} vs {home_p}", "Weather": weather})
+            games.append({"Game": f"{away} @ {home}", "Venue": venue, "Pitchers": f"{away_p} vs {home_p}"})
     
     if games:
         st.dataframe(pd.DataFrame(games))
@@ -39,33 +37,27 @@ try:
 except:
     st.error("Could not load games")
 
-# Big HR Table
-st.subheader("All Home Run Candidates")
+st.subheader("Home Run Candidates (All Players)")
 if pyb:
     try:
-        with st.spinner("Pulling all available Statcast + stats..."):
-            # Batting stats (season)
-            batting = pyb.batting_stats(date.today().year) if pyb else pd.DataFrame()
-            pitching = pyb.pitching_stats(date.today().year) if pyb else pd.DataFrame()
-            
-            st.write(f"Batters loaded: {len(batting)} | Pitchers loaded: {len(pitching)}")
+        with st.spinner("Pulling all available data..."):
+            batting = pyb.batting_stats_range(start_dt=(date.today() - pd.Timedelta(days=30)).isoformat())
+            st.write(f"Batters loaded: {len(batting)}")
             
             if not batting.empty:
-                batting = batting[['Name', 'Team', 'Barrel%', 'HardHit%', 'ISO', 'xSLG', 'maxEV']].copy()
-                batting['Model%'] = 0.20  # placeholder - replace with your math
-                batting['Score'] = batting['Barrel%'] * 5 + batting['HardHit%'] * 2  # example
+                cols = [c for c in ['Name', 'Team', 'Barrel%', 'HardHit%', 'ISO', 'xSLG', 'maxEV'] if c in batting.columns]
+                display = batting[cols].copy()
+                display['Model%'] = 0.20
+                display['Score'] = 70  # placeholder
                 
-                sort_by = st.selectbox("Sort by", ["Score", "Model%", "Barrel%", "HardHit%"])
-                batting = batting.sort_values(sort_by, ascending=False)
+                sort_by = st.selectbox("Sort by", ["Score", "Model%", "Barrel%"])
+                display = display.sort_values(sort_by, ascending=False)
                 
-                st.dataframe(batting.head(50))  # show more
-                
-                st.write("**Pitchers**")
-                st.dataframe(pitching[['Name', 'Team', 'HR9']].head(30))
+                st.dataframe(display.head(100))  # show lots
     except Exception as e:
-        st.error("Data error")
+        st.error("Data error - using limited mode")
         st.write(str(e)[:200])
 else:
     st.write("pybaseball not installed")
 
-st.caption("Weather, full 12 criteria, Edge, Book odds coming next. Tell me what to add.")
+st.caption("Full model + 12 criteria next
