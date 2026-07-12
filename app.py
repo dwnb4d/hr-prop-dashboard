@@ -11,13 +11,14 @@ except ImportError:
 
 st.set_page_config(page_title="MLB HR Model", layout="wide")
 st.title("MLB Home Run Model Dashboard")
-st.write("Find good home run bets today")
+st.write("Find good home run bets today - Full Data")
 
 date_picked = st.date_input("Pick a day", value=date.today())
 
+# Games
 st.subheader("Today's Games")
 try:
-    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_picked.strftime('%Y-%m-%d')}&hydrate=probablePitcher,team,venue"
+    url = f"https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date_picked.strftime('%Y-%m-%d')}&hydrate=probablePitcher,team,venue,weather"
     data = requests.get(url).json()
     
     games = []
@@ -28,7 +29,8 @@ try:
             venue = g.get("venue", {}).get("name", "N/A")
             away_p = g["teams"]["away"].get("probablePitcher", {}).get("fullName", "TBD")
             home_p = g["teams"]["home"].get("probablePitcher", {}).get("fullName", "TBD")
-            games.append({"Game": f"{away} @ {home}", "Venue": venue, "Pitchers": f"{away_p} vs {home_p}"})
+            weather = g.get("weather", "Unknown")
+            games.append({"Game": f"{away} @ {home}", "Venue": venue, "Pitchers": f"{away_p} vs {home_p}", "Weather": weather})
     
     if games:
         st.dataframe(pd.DataFrame(games))
@@ -37,37 +39,33 @@ try:
 except:
     st.error("Could not load games")
 
-st.subheader("Home Run Value Plays")
+# Big HR Table
+st.subheader("All Home Run Candidates")
 if pyb:
     try:
-        with st.spinner("Loading real-time stats..."):
-            end = date.today()
-            start = end - pd.Timedelta(days=30)
-            df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat())
+        with st.spinner("Pulling all available Statcast + stats..."):
+            # Batting stats (season)
+            batting = pyb.batting_stats(date.today().year) if pyb else pd.DataFrame()
+            pitching = pyb.pitching_stats(date.today().year) if pyb else pd.DataFrame()
             
-            if not df.empty:
-                st.write("Data loaded!")
+            st.write(f"Batters loaded: {len(batting)} | Pitchers loaded: {len(pitching)}")
+            
+            if not batting.empty:
+                batting = batting[['Name', 'Team', 'Barrel%', 'HardHit%', 'ISO', 'xSLG', 'maxEV']].copy()
+                batting['Model%'] = 0.20  # placeholder - replace with your math
+                batting['Score'] = batting['Barrel%'] * 5 + batting['HardHit%'] * 2  # example
                 
-                player_stats = df.groupby('player_name').agg({
-                    'events': 'count'
-                }).reset_index()
+                sort_by = st.selectbox("Sort by", ["Score", "Model%", "Barrel%", "HardHit%"])
+                batting = batting.sort_values(sort_by, ascending=False)
                 
-                player_stats.rename(columns={'player_name': 'Name'}, inplace=True)
+                st.dataframe(batting.head(50))  # show more
                 
-                # Placeholder Model (we'll improve with real metrics)
-                player_stats['Model%'] = 0.18
-                player_stats['Score'] = 65
-                
-                sort_by = st.selectbox("Sort by", ["Score", "Model%"])
-                player_stats = player_stats.sort_values(sort_by, ascending=False)
-                
-                st.dataframe(player_stats[['Name', 'Model%', 'Score']].head(20))
-            else:
-                st.write("No data yet.")
+                st.write("**Pitchers**")
+                st.dataframe(pitching[['Name', 'Team', 'HR9']].head(30))
     except Exception as e:
-        st.error("Statcast error")
-        st.write(str(e)[:300])
+        st.error("Data error")
+        st.write(str(e)[:200])
 else:
     st.write("pybaseball not installed")
 
-st.caption("Type 'add checklist' for full 12 criteria + better Model%.")
+st.caption("Weather, full 12 criteria, Edge, Book odds coming next. Tell me what to add.")
