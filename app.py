@@ -11,29 +11,11 @@ except ImportError:
     pyb = None
     st.error("pybaseball not installed. Run: pip install pybaseball")
 
-st.set_page**Fixed!** The error happened because you copied my previous message (which included markdown like `**Here's...**`) directly into the file. Here's the **clean `app.py`** with no extra text:
-
-### `app.py` (Copy-Paste This Entirely)
-```python
-import math
-from datetime import date, datetime
-import pandas as pd
-import requests
-import streamlit as st
-
-try:
-    import pybaseball as pyb
-    pyb.cache.enable()
-except ImportError:
-    pyb = None
-    st.error("pybaseball not installed. Run: pip install pybaseball")
-
 st.set_page_config(page_title="MLB HR Model", layout="wide")
 
 MLB_BASE = "https://statsapi.mlb.com/api/v1"
 HEADERS = {"User-Agent": "Mozilla/5.0 (dashboard script)"}
 
-# Reference data — approximate, double-check / update each season
 PARK_HR_FACTOR = {
     "COL": 1.25, "CIN": 1.18, "NYY": 1.12, "BAL": 1.10, "PHI": 1.09,
     "TEX": 1.07, "BOS": 1.05, "CWS": 1.05, "MIL": 1.04, "HOU": 1.03,
@@ -59,7 +41,6 @@ STADIUM_COORDS = {
     "NYM": (40.7571, -73.8458), "PIT": (40.4469, -80.0057),
 }
 
-# MLB Stats API helpers
 @st.cache_data(ttl=300)
 def get_today_schedule(game_date: str = None) -> pd.DataFrame:
     if game_date is None:
@@ -104,10 +85,7 @@ def get_pitching_stats(season: int = None):
 
 st.title("MLB Home Run Model Dashboard")
 
-st.markdown("""
-For each batter starting today, computes Model%, Fair, Book, Edge, Score, and 12-criteria checklist.
-Data sources are free except optional odds API.
-""")
+st.markdown("Data sources: MLB Stats API + pybaseball (free). Odds require separate API key.")
 
 game_date = st.date_input("Select Date", value=date.today())
 
@@ -115,29 +93,18 @@ schedule = get_today_schedule(game_date.isoformat())
 batting = get_batting_stats()
 
 if schedule.empty:
-    st.warning("No games found for this date.")
+    st.warning("No games found.")
     st.stop()
 
 st.subheader(f"Games on {game_date}")
-
 for _, game in schedule.iterrows():
-    with st.expander(f"{game['away_team']} @ {game['home_team']} ({game['venue']})"):
-        st.write(f"Probable Pitchers: {game['probable_away']} (away) vs {game['probable_home']} (home)")
+    with st.expander(f"{game['away_team']} @ {game['home_team']} - {game['venue']}"):
+        st.write(f"Probables: {game.get('probable_away', 'TBD')} vs {game.get('probable_home', 'TBD')}")
 
-# Model section (expand this with your full heuristic)
-st.header("Today's HR Value Plays")
-if not batting.empty and not batting.empty:
-    # Simple placeholder — replace with your real weighted model
-    batting["Barrel%"] = batting.get("Barrel%", 0)
-    batting["HardHit%"] = batting.get("HardHit%", 0)
-    batting["Model%"] = (batting["Barrel%"] * 0.4 + batting["HardHit%"] * 0.3 + 0.1) / 100
-    batting["Model%"] = batting["Model%"].clip(upper=0.45)
-
-    st.dataframe(
-        batting[["Name", "Team", "Barrel%", "HardHit%", "Model%"]]
-        .sort_values("Model%", ascending=False).head(20)
-    )
+st.header("HR Value Plays")
+if not batting.empty:
+    # Placeholder model - replace with your full logic
+    batting["Model%"] = 0.15  # TODO: compute properly
+    st.dataframe(batting[["Name", "Team", "Model%"]].sort_values("Model%", ascending=False).head(30))
 else:
-    st.info("Loading stats... (first run may take 30-60s)")
-
-st.caption("Improve the Model% calculation in the code with your 12-criteria logic.")
+    st.info("Loading batting stats... (may take a minute)")
