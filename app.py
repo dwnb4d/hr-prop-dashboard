@@ -43,39 +43,38 @@ if pyb:
         with st.spinner("Loading power stats..."):
             end = date.today()
             start = end - pd.Timedelta(days=30)
-            df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat())
+            # Filter for batted balls only
+            df = pyb.statcast(start_dt=start.isoformat(), end_dt=end.isoformat(), 
+                             groupby='batter')
             
             if not df.empty:
-                st.write("Debug: Columns found -", list(df.columns)[:15])
+                st.write("Data loaded! Rows:", len(df))
                 
-                agg_dict = {}
-                if 'barrel' in df.columns:
-                    agg_dict['barrel'] = 'mean'
-                if 'launch_speed' in df.columns:
-                    agg_dict['launch_speed'] = 'max'
-                agg_dict['events'] = 'count'
-                
-                player_stats = df.groupby('player_name').agg(agg_dict).reset_index()
+                player_stats = df.groupby('player_name').agg({
+                    'barrel_rate': 'mean',
+                    'launch_speed': 'max',
+                    'events': 'count'
+                }).reset_index()
                 
                 player_stats.rename(columns={
                     'player_name': 'Name',
-                    'barrel': 'Barrel%',
+                    'barrel_rate': 'Barrel%',
                     'launch_speed': 'Max EV'
                 }, inplace=True)
                 
                 if 'Barrel%' in player_stats.columns:
-                    player_stats['Model%'] = (player_stats['Barrel%'] * 2.5).clip(upper=0.45)
+                    player_stats['Model%'] = (player_stats['Barrel%'] * 100 * 2.5).clip(upper=0.45)  # convert if needed
                 else:
                     player_stats['Model%'] = 0.15
                 
                 player_stats = player_stats.sort_values('Model%', ascending=False).head(20)
-                st.dataframe(player_stats)
+                st.dataframe(player_stats[['Name', 'Barrel%', 'Max EV', 'Model%']])
             else:
-                st.write("No Statcast data yet.")
+                st.write("No data yet.")
     except Exception as e:
         st.error("Statcast error")
-        st.write(str(e)[:200])
+        st.write(str(e)[:300])
 else:
     st.write("pybaseball not installed")
 
-st.caption("Tell me what to add next (12 criteria, weather, etc.)")
+st.caption("Ready for 12 criteria next. Tell me 'add checklist' when ready.")
